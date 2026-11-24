@@ -15,6 +15,8 @@ const state = {
   limit: 100,
   view: localStorage.getItem('storage_view') || 'list',
   roots: [],
+  items: [],
+  currentPreviewPath: null,
 };
 
 const el = (id) => document.getElementById(id);
@@ -36,7 +38,113 @@ const ICONS = {
   arrowDown: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
   globe: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
   chevronRight: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
+  play: '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 4 20 12 6 20 6 4"/></svg>',
 };
+
+// Bounded-concurrency video thumbnail generator + in-memory cache
+const videoThumbCache = new Map();
+const videoThumbQueue = [];
+let activeVideoJobs = 0;
+
+function captureVideoFrame(streamUrl) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+
+    let done = false;
+    const finish = (dataUrl) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      video.removeAttribute('src');
+      video.load();
+      resolve(dataUrl);
+    };
+
+    const timer = setTimeout(() => finish(null), 5000);
+
+    video.onloadedmetadata = () => {
+      const target = video.duration && Number.isFinite(video.duration)
+        ? Math.min(2, Math.max(0.1, video.duration * 0.1))
+        : 0.5;
+      try {
+        video.currentTime = target;
+      } catch {
+        finish(null);
+      }
+    };
+
+    video.onseeked = () => {
+      try {
+        const w = 320;
+        const h = video.videoWidth ? Math.round((video.videoHeight / video.videoWidth) * w) : 180;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h || 180;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL('image/jpeg', 0.72));
+      } catch {
+        finish(null);
+      }
+    };
+
+    video.onerror = () => finish(null);
+    video.src = streamUrl;
+  });
+}
+
+function drainVideoQueue() {
+  while (activeVideoJobs < 2 && videoThumbQueue.length > 0) {
+    const job = videoThumbQueue.shift();
+    if (!job.el.isConnected) continue;
+    if (videoThumbCache.has(job.url)) {
+      const cached = videoThumbCache.get(job.url);
+      if (cached) job.apply(cached);
+      continue;
+    }
+    activeVideoJobs++;
+    captureVideoFrame(job.url)
+      .then((dataUrl) => {
+        videoThumbCache.set(job.url, dataUrl);
+        if (dataUrl && job.el.isConnected) job.apply(dataUrl);
+      })
+      .finally(() => {
+        activeVideoJobs--;
+        drainVideoQueue();
+      });
+  }
+}
+
+const thumbObserver = typeof IntersectionObserver !== 'undefined'
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        thumbObserver.unobserve(entry.target);
+        const url = entry.target.dataset.thumbUrl;
+        const mode = entry.target.dataset.thumbMode;
+        if (!url) continue;
+
+        const apply = (dataUrl) => {
+          if (mode === 'grid') {
+            entry.target.innerHTML = `<img class="thumb-img" src="${dataUrl}" alt="" /><span class="video-badge">${ICONS.play}</span>`;
+          } else {
+            entry.target.innerHTML = `<img class="list-thumb" src="${dataUrl}" alt="" />`;
+          }
+        };
+
+        if (videoThumbCache.has(url)) {
+          const cached = videoThumbCache.get(url);
+          if (cached) apply(cached);
+        } else {
+          videoThumbQueue.push({ el: entry.target, url, apply });
+          drainVideoQueue();
+        }
+      }
+    }, { rootMargin: '120px' })
+  : null;
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B';
@@ -60,7 +168,65 @@ function createIconBadge(item) {
   const cat = item.isDir ? 'folder' : item.category;
   span.className = `item-icon icon-${cat}`;
   span.innerHTML = ICONS[cat] || ICONS.file;
+
+  if (!item.isDir && item.category === 'image') {
+    const img = document.createElement('img');
+    img.className = 'list-thumb';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.src = buildFileUrl('/api/stream', item.path);
+    img.alt = '';
+    img.onerror = () => { span.innerHTML = ICONS.image; };
+    span.innerHTML = '';
+    span.appendChild(img);
+  } else if (!item.isDir && item.category === 'video' && thumbObserver) {
+    span.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
+    span.dataset.thumbMode = 'list';
+    thumbObserver.observe(span);
+  }
+
   return span;
+}
+
+function createGridThumb(item) {
+  const box = document.createElement('div');
+  box.className = 'grid-thumb';
+  box.onclick = () => openItem(item);
+
+  const fallback = () => {
+    box.innerHTML = '';
+    const badge = document.createElement('span');
+    const cat = item.isDir ? 'folder' : item.category;
+    badge.className = `item-icon icon-${cat}`;
+    badge.innerHTML = ICONS[cat] || ICONS.file;
+    box.appendChild(badge);
+  };
+
+  if (!item.isDir && item.category === 'image') {
+    const img = document.createElement('img');
+    img.className = 'thumb-img';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.src = buildFileUrl('/api/stream', item.path);
+    img.alt = item.name;
+    img.onerror = fallback;
+    box.appendChild(img);
+  } else if (!item.isDir && item.category === 'video') {
+    fallback();
+    const badge = document.createElement('span');
+    badge.className = 'video-badge';
+    badge.innerHTML = ICONS.play;
+    box.appendChild(badge);
+    if (thumbObserver) {
+      box.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
+      box.dataset.thumbMode = 'grid';
+      thumbObserver.observe(box);
+    }
+  } else {
+    fallback();
+  }
+
+  return box;
 }
 
 async function apiJson(url, options = {}) {
@@ -122,6 +288,7 @@ async function loadDirectory() {
 
   const data = await apiJson(`/api/list?${params.toString()}`);
   state.roots = data.roots || [];
+  state.items = data.items || [];
   if (data.root) {
     state.root = data.root.id;
   }
@@ -237,14 +404,10 @@ function renderFiles(items) {
       const card = document.createElement('div');
       card.className = 'grid-card';
 
-      const top = document.createElement('div');
-      top.className = 'grid-top';
+      const thumb = createGridThumb(item);
 
-      const icon = createIconBadge(item);
-      icon.onclick = () => openItem(item);
-
-      const actions = createActionButtons(item);
-      top.append(icon, actions);
+      const body = document.createElement('div');
+      body.className = 'grid-body';
 
       const name = document.createElement('div');
       name.className = 'file-name';
@@ -252,11 +415,14 @@ function renderFiles(items) {
       name.title = item.name;
       name.onclick = () => openItem(item);
 
+      const actions = createActionButtons(item);
+      body.append(name, actions);
+
       const meta = document.createElement('div');
       meta.className = 'grid-meta';
       meta.innerHTML = `<span>${item.isDir ? 'Folder' : formatBytes(item.size)}</span><span>${formatDate(item.mtime)}</span>`;
 
-      card.append(top, name, meta);
+      card.append(thumb, body, meta);
       container.appendChild(card);
     } else {
       const row = document.createElement('div');
@@ -339,6 +505,9 @@ async function openPreview(item) {
   const streamUrl = buildFileUrl('/api/stream', item.path);
   const downloadUrl = buildFileUrl('/api/download', item.path);
 
+  state.currentPreviewPath = item.path;
+  updatePreviewNav();
+
   title.textContent = item.name;
   dl.href = downloadUrl;
   dl.download = item.name;
@@ -393,7 +562,40 @@ async function openPreview(item) {
   }
 }
 
+function getPreviewableFiles() {
+  return (state.items || []).filter((it) => !it.isDir);
+}
+
+function updatePreviewNav() {
+  const files = getPreviewableFiles();
+  const idx = files.findIndex((f) => f.path === state.currentPreviewPath);
+  const prevBtn = el('preview-prev');
+  const nextBtn = el('preview-next');
+
+  if (idx === -1 || files.length <= 1) {
+    prevBtn.classList.add('hidden');
+    nextBtn.classList.add('hidden');
+    return;
+  }
+
+  prevBtn.classList.remove('hidden');
+  nextBtn.classList.remove('hidden');
+  prevBtn.disabled = idx <= 0;
+  nextBtn.disabled = idx >= files.length - 1;
+}
+
+function navigatePreview(delta) {
+  const files = getPreviewableFiles();
+  const idx = files.findIndex((f) => f.path === state.currentPreviewPath);
+  if (idx === -1) return;
+  const nextIdx = idx + delta;
+  if (nextIdx >= 0 && nextIdx < files.length) {
+    openPreview(files[nextIdx]);
+  }
+}
+
 function closePreview() {
+  state.currentPreviewPath = null;
   el('preview-modal').classList.add('hidden');
   el('preview-body').innerHTML = '';
 }
@@ -844,12 +1046,19 @@ el('tunnel-copy-btn').addEventListener('click', async () => {
   }
 });
 
+el('preview-prev').addEventListener('click', () => navigatePreview(-1));
+el('preview-next').addEventListener('click', () => navigatePreview(1));
 el('preview-close').addEventListener('click', closePreview);
 document.querySelector('#preview-modal .modal-backdrop').addEventListener('click', closePreview);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closePreview();
     closeRootsModal();
+  } else if (!el('preview-modal').classList.contains('hidden')) {
+    const tag = document.activeElement?.tagName;
+    if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'INPUT') return;
+    if (e.key === 'ArrowLeft') navigatePreview(-1);
+    if (e.key === 'ArrowRight') navigatePreview(1);
   }
 });
 

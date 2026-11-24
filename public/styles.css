@@ -482,6 +482,15 @@ input:focus,
   justify-content: center;
   flex-shrink: 0;
   cursor: pointer;
+  overflow: hidden;
+  position: relative;
+}
+
+.list-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .icon-folder { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
@@ -537,10 +546,10 @@ input:focus,
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
 
@@ -549,10 +558,49 @@ input:focus,
   background: var(--surface-2);
 }
 
-.grid-top {
+.grid-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 7px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video-badge {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.78);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.grid-body {
+  display: flex;
   align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .grid-card .item-icon {
@@ -724,14 +772,45 @@ input:focus,
   align-items: center;
 }
 
+.preview-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 220px;
+  overflow: hidden;
+}
+
 .preview-body {
-  padding: 16px;
+  width: 100%;
+  padding: 16px 56px;
   overflow: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 220px;
+}
+
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(24, 24, 28, 0.85);
+  backdrop-filter: blur(4px);
+}
+
+.preview-prev {
+  left: 12px;
+}
+
+.preview-next {
+  right: 12px;
 }
 
 .preview-body video,
