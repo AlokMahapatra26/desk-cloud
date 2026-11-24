@@ -21,6 +21,7 @@ Options:
       --no-auth           Disable password authentication (for trusted LAN only)
   -r, --readonly          Disable uploads, folder creation, renaming, deletion, and root changes
   -t, --tunnel            Automatically expose via Cloudflare Tunnel (downloads cloudflared if needed)
+      --allow-power       Allow authenticated remote Shutdown, Restart, and Sleep from the UI
       --roots-file <path> Path to JSON file storing UI-added folders
   -h, --help              Show this help message
 
@@ -108,6 +109,7 @@ function parseConfig(argv = process.argv.slice(2), env = process.env) {
   let noAuth = false;
   let readonly = env.STORAGE_READONLY === '1' || env.STORAGE_READONLY === 'true';
   let tunnel = env.STORAGE_TUNNEL === '1' || env.STORAGE_TUNNEL === 'true';
+  let allowPower = env.STORAGE_ALLOW_POWER === '1' || env.STORAGE_ALLOW_POWER === 'true';
   let rootsFile = env.STORAGE_ROOTS_FILE || path.join(os.homedir(), '.storage-server-roots.json');
   let help = false;
 
@@ -125,6 +127,8 @@ function parseConfig(argv = process.argv.slice(2), env = process.env) {
       readonly = true;
     } else if (arg === '-t' || arg === '--tunnel') {
       tunnel = true;
+    } else if (arg === '--allow-power') {
+      allowPower = true;
     } else if (arg === '--no-auth') {
       noAuth = true;
     } else if (arg === '-d' || arg === '--dir') {
@@ -192,6 +196,7 @@ function parseConfig(argv = process.argv.slice(2), env = process.env) {
     generatedPassword,
     readonly,
     tunnel,
+    allowPower,
     sessionSecret,
     chunkSizeBytes: 20 * 1024 * 1024,
   };

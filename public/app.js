@@ -4,6 +4,7 @@ const state = {
   authEnabled: true,
   authenticated: false,
   readonly: false,
+  powerEnabled: false,
   chunkSizeBytes: 20 * 1024 * 1024,
   root: '0',
   path: '',
@@ -253,6 +254,7 @@ function showApp() {
   el('login-view').classList.add('hidden');
   el('app-view').classList.remove('hidden');
   el('logout-btn').classList.toggle('hidden', !state.authEnabled);
+  el('power-btn').classList.toggle('hidden', !state.powerEnabled);
   el('readonly-badge').classList.toggle('hidden', !state.readonly);
   el('tunnel-btn').classList.toggle('hidden', state.readonly);
   el('roots-btn').classList.toggle('hidden', state.readonly);
@@ -265,6 +267,7 @@ async function init() {
   state.authEnabled = status.authEnabled;
   state.authenticated = status.authenticated;
   state.readonly = status.readonly;
+  state.powerEnabled = Boolean(status.powerEnabled);
   state.chunkSizeBytes = status.chunkSizeBytes || state.chunkSizeBytes;
 
   if (state.authEnabled && !state.authenticated) {
@@ -1067,6 +1070,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     closePreview();
     closeRootsModal();
+    closePowerModal();
   } else if (!el('preview-modal').classList.contains('hidden')) {
     const tag = document.activeElement?.tagName;
     if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'INPUT') return;
@@ -1094,6 +1098,66 @@ window.addEventListener('drop', (e) => {
   el('drop-overlay').classList.add('hidden');
   const files = Array.from(e.dataTransfer?.files || []);
   uploadFiles(files);
+});
+
+// --- Remote Power Control ---
+
+const POWER_HINTS = {
+  sleep: 'Puts this computer to sleep. DeskCloud will pause until it wakes.',
+  restart: 'Restarts this computer. DeskCloud will disconnect during reboot.',
+  shutdown: 'Shuts down this computer. DeskCloud cannot turn it back on remotely.',
+};
+
+let selectedPowerAction = 'sleep';
+
+function openPowerModal() {
+  if (!state.powerEnabled) return;
+  selectedPowerAction = 'sleep';
+  document.querySelectorAll('#power-action-seg .seg-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.action === 'sleep');
+  });
+  el('power-hint').textContent = POWER_HINTS.sleep;
+  el('power-password').value = '';
+  el('power-error').classList.add('hidden');
+  el('power-modal').classList.remove('hidden');
+  el('power-password').focus();
+}
+
+function closePowerModal() {
+  el('power-modal').classList.add('hidden');
+}
+
+el('power-btn').addEventListener('click', openPowerModal);
+el('power-close').addEventListener('click', closePowerModal);
+el('power-cancel').addEventListener('click', closePowerModal);
+document.querySelector('#power-modal .modal-backdrop').addEventListener('click', closePowerModal);
+
+el('power-action-seg').addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  selectedPowerAction = btn.dataset.action;
+  document.querySelectorAll('#power-action-seg .seg-btn').forEach((b) => b.classList.remove('active'));
+  btn.classList.add('active');
+  el('power-hint').textContent = POWER_HINTS[selectedPowerAction] || '';
+});
+
+el('power-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = el('power-error');
+  errEl.classList.add('hidden');
+  const password = el('power-password').value;
+  try {
+    await apiJson('/api/power', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: selectedPowerAction, password }),
+    });
+    closePowerModal();
+    alert(`Power action "${selectedPowerAction}" triggered.`);
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+  }
 });
 
 init().catch((err) => {

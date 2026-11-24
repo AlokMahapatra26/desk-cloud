@@ -68,6 +68,9 @@
           <span>Upload</span>
         </button>
         <input id="file-input" type="file" multiple class="hidden" />
+        <button id="power-btn" class="btn btn-secondary icon-only hidden" title="Power Controls">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+        </button>
         <button id="logout-btn" class="btn btn-ghost icon-only hidden" title="Sign out">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
@@ -226,6 +229,41 @@
           <div id="sys-dir-list" class="sys-dir-list"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Power Control Modal -->
+  <div id="power-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content power-modal-content">
+      <div class="modal-header">
+        <h2>Remote Power Control</h2>
+        <button id="power-close" class="btn btn-ghost icon-only small-btn" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <form id="power-form" class="power-modal-body">
+        <div class="segmented power-actions-seg" id="power-action-seg">
+          <button type="button" class="seg-btn active" data-action="sleep">Sleep</button>
+          <button type="button" class="seg-btn" data-action="restart">Restart</button>
+          <button type="button" class="seg-btn" data-action="shutdown">Shutdown</button>
+        </div>
+        <p id="power-hint" class="muted small">Puts this computer to sleep. DeskCloud will pause until it wakes.</p>
+        <div class="input-group">
+          <input
+            id="power-password"
+            type="password"
+            placeholder="Confirm password to continue"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <p id="power-error" class="error-text hidden"></p>
+        <div class="power-footer">
+          <button type="button" id="power-cancel" class="btn btn-secondary">Cancel</button>
+          <button type="submit" id="power-submit" class="btn btn-primary">Run Action</button>
+        </div>
+      </form>
     </div>
   </div>
 

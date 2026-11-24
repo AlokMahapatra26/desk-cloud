@@ -9,17 +9,19 @@ const os = require('node:os');
 const { parseConfig } = require('../src/config');
 const { startServer } = require('../server');
 const { getDownloadAsset } = require('../src/tunnel');
+const { getPowerCommand } = require('../src/power');
 
-async function createTestEnv({ readonly = false, extraDirs = [], omitDir = false, tunnelManager } = {}) {
+async function createTestEnv({ readonly = false, allowPower = false, extraDirs = [], omitDir = false, tunnelManager, powerRunner } = {}) {
   const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'storage-srv-test-'));
   const rootsFile = path.join(tmpDir, 'roots.json');
   const args = ['--port', '0', '--host', '127.0.0.1', '--password', 'test-pass', '--roots-file', rootsFile];
   if (!omitDir) args.push('--dir', tmpDir);
   if (readonly) args.push('--readonly');
+  if (allowPower) args.push('--allow-power');
   for (const d of extraDirs) args.push('--dir', d);
 
   const config = parseConfig(args, {});
-  const server = await startServer(config, { tunnelManager });
+  const server = await startServer(config, { tunnelManager, powerRunner });
   const { port } = server.address();
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -349,6 +351,62 @@ test('tunnel asset mapping and tunnel API endpoints', async () => {
     assert.equal(st2.status, 'stopped');
   } finally {
     await env.close();
+  }
+});
+
+test('remote power control: opt-in flag, password check, readonly block, and OS command mapping', async () => {
+  assert.equal(getPowerCommand('shutdown', 'win32').cmd, 'shutdown');
+  assert.equal(getPowerCommand('restart', 'darwin').cmd, 'osascript');
+  assert.equal(getPowerCommand('sleep', 'linux').cmd, 'systemctl');
+  assert.throws(() => getPowerCommand('hibernate', 'linux'), /Invalid power action/);
+
+  // Disabled by default
+  const offEnv = await createTestEnv();
+  try {
+    const { cookie } = await login(offEnv.baseUrl);
+    const statusOff = await (await fetch(`${offEnv.baseUrl}/api/auth/status`, { headers: { Cookie: cookie } })).json();
+    assert.equal(statusOff.powerEnabled, false);
+
+    const denied = await fetch(`${offEnv.baseUrl}/api/power`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sleep', password: 'test-pass' }),
+    });
+    assert.equal(denied.status, 403);
+  } finally {
+    await offEnv.close();
+  }
+
+  // Enabled with --allow-power and mocked powerRunner
+  const triggered = [];
+  const onEnv = await createTestEnv({
+    allowPower: true,
+    powerRunner: async (action) => {
+      triggered.push(action);
+      return { ok: true, action };
+    },
+  });
+  try {
+    const { cookie } = await login(onEnv.baseUrl);
+    const statusOn = await (await fetch(`${onEnv.baseUrl}/api/auth/status`, { headers: { Cookie: cookie } })).json();
+    assert.equal(statusOn.powerEnabled, true);
+
+    const badPass = await fetch(`${onEnv.baseUrl}/api/power`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'shutdown', password: 'wrong' }),
+    });
+    assert.equal(badPass.status, 401);
+
+    const okRes = await fetch(`${onEnv.baseUrl}/api/power`, {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'shutdown', password: 'test-pass' }),
+    });
+    assert.equal(okRes.status, 200);
+    assert.deepEqual(triggered, ['shutdown']);
+  } finally {
+    await onEnv.close();
   }
 });
 

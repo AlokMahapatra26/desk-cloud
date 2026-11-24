@@ -954,6 +954,30 @@ input:focus,
   flex: 1;
 }
 
+/* Power Modal */
+.power-modal-content {
+  width: min(420px, 100%);
+}
+
+.power-modal-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.power-actions-seg {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.power-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 720px) {
   .file-header,
   .file-row {

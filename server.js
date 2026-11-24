@@ -24,7 +24,10 @@ function startServer(config, options = {}) {
   let boundPort = config.port;
   const tunnelManager =
     options.tunnelManager || createTunnelManager({ getPort: () => boundPort });
-  const handler = createRequestHandler(config, { tunnelManager });
+  const handler = createRequestHandler(config, {
+    tunnelManager,
+    powerRunner: options.powerRunner,
+  });
   const server = http.createServer(handler);
   server.tunnelManager = tunnelManager;
   // Allow long-running video streams and large chunked uploads

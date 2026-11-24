@@ -5,6 +5,7 @@ const fsp = fs.promises;
 const path = require('path');
 const { URL } = require('url');
 const { createAuthManager } = require('./auth');
+const { executePowerAction } = require('./power');
 const {
   listDirectory,
   streamFile,
@@ -88,9 +89,10 @@ async function serveStatic(res, reqPath) {
   }
 }
 
-function createRequestHandler(config, { tunnelManager } = {}) {
+function createRequestHandler(config, { tunnelManager, powerRunner } = {}) {
   const auth = createAuthManager(config);
   const uploads = createUploadManager(config.roots);
+  const runPower = powerRunner || executePowerAction;
 
   function requireWritable() {
     if (config.readonly) {
@@ -121,6 +123,7 @@ function createRequestHandler(config, { tunnelManager } = {}) {
           authEnabled: config.authEnabled,
           authenticated: auth.isAuthenticated(req),
           readonly: config.readonly,
+          powerEnabled: Boolean(config.allowPower && !config.readonly && config.authEnabled),
           chunkSizeBytes: config.chunkSizeBytes,
         });
         return;
@@ -222,6 +225,26 @@ function createRequestHandler(config, { tunnelManager } = {}) {
           }
           const status = await tunnelManager.stop();
           sendJson(res, 200, status);
+          return;
+        }
+
+        if (pathname === '/api/power' && req.method === 'POST') {
+          requireWritable();
+          if (!config.allowPower) {
+            sendJson(res, 403, { error: 'Remote power control is disabled. Start with --allow-power to enable.' });
+            return;
+          }
+          if (!config.authEnabled) {
+            sendJson(res, 403, { error: 'Remote power control requires authentication.' });
+            return;
+          }
+          const body = await readJsonBody(req);
+          if (!auth.verifyPassword(body.password)) {
+            sendJson(res, 401, { error: 'Invalid password confirmation' });
+            return;
+          }
+          const result = await runPower(body.action);
+          sendJson(res, 200, result);
           return;
         }
 
