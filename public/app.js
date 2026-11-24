@@ -14,6 +14,7 @@ const state = {
   page: 1,
   limit: 100,
   view: localStorage.getItem('storage_view') || 'list',
+  showThumbnails: localStorage.getItem('storage_thumbnails') !== 'false',
   roots: [],
   items: [],
   currentPreviewPath: null,
@@ -169,7 +170,7 @@ function createIconBadge(item) {
   span.className = `item-icon icon-${cat}`;
   span.innerHTML = ICONS[cat] || ICONS.file;
 
-  if (!item.isDir && item.category === 'image') {
+  if (state.showThumbnails && !item.isDir && item.category === 'image') {
     const img = document.createElement('img');
     img.className = 'list-thumb';
     img.loading = 'lazy';
@@ -179,7 +180,7 @@ function createIconBadge(item) {
     img.onerror = () => { span.innerHTML = ICONS.image; };
     span.innerHTML = '';
     span.appendChild(img);
-  } else if (!item.isDir && item.category === 'video' && thumbObserver) {
+  } else if (state.showThumbnails && !item.isDir && item.category === 'video' && thumbObserver) {
     span.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
     span.dataset.thumbMode = 'list';
     thumbObserver.observe(span);
@@ -202,7 +203,7 @@ function createGridThumb(item) {
     box.appendChild(badge);
   };
 
-  if (!item.isDir && item.category === 'image') {
+  if (state.showThumbnails && !item.isDir && item.category === 'image') {
     const img = document.createElement('img');
     img.className = 'thumb-img';
     img.loading = 'lazy';
@@ -217,7 +218,7 @@ function createGridThumb(item) {
     badge.className = 'video-badge';
     badge.innerHTML = ICONS.play;
     box.appendChild(badge);
-    if (thumbObserver) {
+    if (state.showThumbnails && thumbObserver) {
       box.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
       box.dataset.thumbMode = 'grid';
       thumbObserver.observe(box);
@@ -366,6 +367,12 @@ function renderFiles(items) {
   container.className = state.view === 'grid' ? 'file-grid' : 'file-list';
   el('view-btn').innerHTML = state.view === 'grid' ? ICONS.list : ICONS.grid;
   el('view-btn').title = state.view === 'grid' ? 'Switch to List view' : 'Switch to Grid view';
+
+  const thumbBtn = el('thumb-btn');
+  thumbBtn.innerHTML = ICONS.image;
+  thumbBtn.classList.toggle('active', state.showThumbnails);
+  thumbBtn.setAttribute('aria-pressed', String(state.showThumbnails));
+  thumbBtn.title = state.showThumbnails ? 'Hide thumbnails' : 'Show thumbnails';
 
   if (items.length === 0) {
     const empty = document.createElement('div');
@@ -781,6 +788,12 @@ el('order-btn').addEventListener('click', () => {
   el('order-btn').innerHTML = state.order === 'asc' ? ICONS.arrowUp : ICONS.arrowDown;
   state.page = 1;
   loadDirectory();
+});
+
+el('thumb-btn').addEventListener('click', () => {
+  state.showThumbnails = !state.showThumbnails;
+  localStorage.setItem('storage_thumbnails', String(state.showThumbnails));
+  renderFiles(state.items);
 });
 
 el('view-btn').addEventListener('click', () => {

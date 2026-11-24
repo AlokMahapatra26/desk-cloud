@@ -392,6 +392,12 @@ input:focus,
   align-items: center;
 }
 
+.sort-controls .btn-secondary.active {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
 /* Breadcrumbs & Subbar */
 .subbar {
   display: flex;
