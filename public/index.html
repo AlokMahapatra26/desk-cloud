@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeskCloud</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-view" class="login-wrapper hidden">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="brand-mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        </div>
+        <div>
+          <h1>DeskCloud</h1>
+          <p class="muted small">Enter your password to access files and media.</p>
+        </div>
+      </div>
+      <form id="login-form">
+        <div class="input-group">
+          <input
+            id="login-password"
+            type="password"
+            placeholder="Password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <button type="submit" class="btn btn-primary full-width">Continue</button>
+      </form>
+      <p id="login-error" class="error-text hidden"></p>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app-view" class="app-shell hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <span class="brand-mark small-mark">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+          </span>
+          <span class="brand-title">DeskCloud</span>
+        </div>
+        <div class="divider-v"></div>
+        <select id="root-select" class="select select-compact hidden" title="Switch drive or folder"></select>
+        <span id="readonly-badge" class="badge hidden">Read-only</span>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="tunnel-btn" class="btn btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span>Go Public</span>
+        </button>
+        <button id="roots-btn" class="btn btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span>Drives &amp; Folders</span>
+        </button>
+        <button id="mkdir-btn" class="btn btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          <span>New Folder</span>
+        </button>
+        <button id="upload-btn" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Upload</span>
+        </button>
+        <input id="file-input" type="file" multiple class="hidden" />
+        <button id="logout-btn" class="btn btn-ghost icon-only hidden" title="Sign out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Subtle Public Tunnel Status Bar -->
+    <div id="tunnel-banner" class="tunnel-bar hidden">
+      <div class="tunnel-info">
+        <span class="status-dot"></span>
+        <span class="muted small">Public</span>
+        <a id="tunnel-url" href="#" target="_blank" rel="noopener" class="tunnel-link truncate"></a>
+      </div>
+      <div class="tunnel-actions">
+        <button id="tunnel-copy-btn" class="btn btn-ghost small-btn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span>Copy</span>
+        </button>
+        <button id="tunnel-stop-btn" class="btn btn-ghost btn-danger small-btn">Stop</button>
+      </div>
+    </div>
+
+    <!-- Filter & Search Toolbar -->
+    <section class="toolbar">
+      <div class="search-box">
+        <svg class="search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="search-input" type="search" placeholder="Search files and movies..." />
+      </div>
+
+      <div class="segmented" id="type-filters">
+        <button class="seg-btn active" data-type="all">All</button>
+        <button class="seg-btn" data-type="video">Videos</button>
+        <button class="seg-btn" data-type="audio">Audio</button>
+        <button class="seg-btn" data-type="image">Images</button>
+        <button class="seg-btn" data-type="doc">Docs</button>
+      </div>
+
+      <div class="sort-controls">
+        <select id="sort-select" class="select select-compact">
+          <option value="name">Name</option>
+          <option value="mtime">Modified</option>
+          <option value="size">Size</option>
+          <option value="type">Type</option>
+        </select>
+        <button id="order-btn" class="btn btn-secondary icon-only" title="Toggle sort order">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+        <button id="view-btn" class="btn btn-secondary icon-only" title="Toggle Grid/List view"></button>
+      </div>
+    </section>
+
+    <!-- Breadcrumbs & Count -->
+    <nav class="subbar">
+      <div id="breadcrumbs" class="breadcrumbs"></div>
+      <div id="item-stats" class="muted small"></div>
+    </nav>
+
+    <!-- File List / Grid -->
+    <main id="file-container" class="file-list"></main>
+
+    <!-- Pagination -->
+    <footer id="pagination" class="pagination hidden">
+      <button id="prev-page" class="btn btn-secondary small-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        <span>Previous</span>
+      </button>
+      <span id="page-info" class="muted small"></span>
+      <button id="next-page" class="btn btn-secondary small-btn">
+        <span>Next</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </footer>
+  </div>
+
+  <!-- Drag & Drop Overlay -->
+  <div id="drop-overlay" class="drop-overlay hidden">
+    <div class="drop-box">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span>Drop files to upload to this folder</span>
+    </div>
+  </div>
+
+  <!-- Upload Progress Drawer -->
+  <div id="upload-drawer" class="upload-drawer hidden">
+    <div class="upload-header">
+      <span class="small" style="font-weight:600;">Uploads</span>
+      <button id="close-uploads" class="btn btn-ghost icon-only small-btn" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="upload-list" class="upload-list"></div>
+  </div>
+
+  <!-- Media & File Preview Modal -->
+  <div id="preview-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="preview-title" class="truncate"></h2>
+        <div class="modal-actions">
+          <button id="copy-stream-btn" class="btn btn-secondary small-btn hidden">Copy Stream URL</button>
+          <a id="preview-download" class="btn btn-primary small-btn" download>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span>Download</span>
+          </a>
+          <button id="preview-close" class="btn btn-ghost icon-only small-btn" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="preview-body" class="preview-body"></div>
+    </div>
+  </div>
+
+  <!-- Manage Shared Folders / Drives Modal -->
+  <div id="roots-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content roots-modal-content">
+      <div class="modal-header">
+        <h2>Drives &amp; Shared Folders</h2>
+        <button id="roots-close" class="btn btn-ghost icon-only small-btn" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="roots-modal-body">
+        <div class="roots-section">
+          <h3>Currently Shared</h3>
+          <div id="shared-roots-list" class="roots-list"></div>
+        </div>
+
+        <div class="roots-section">
+          <h3>Add Folder or Drive</h3>
+          <form id="add-root-form" class="add-root-form">
+            <input id="root-path-input" type="text" placeholder="Paste folder or drive path (e.g. D:\Movies)" required />
+            <input id="root-name-input" type="text" placeholder="Label (optional)" />
+            <button type="submit" class="btn btn-primary">Add</button>
+          </form>
+
+          <div class="sys-browser-bar">
+            <button id="sys-up-btn" class="btn btn-secondary small-btn" type="button">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              <span>Up</span>
+            </button>
+            <span id="sys-current-path" class="muted small truncate">Drives &amp; Quick Locations</span>
+            <button id="sys-share-current-btn" class="btn btn-primary small-btn hidden" type="button">Share This Folder</button>
+          </div>
+          <div id="sys-dir-list" class="sys-dir-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
