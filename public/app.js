@@ -13,7 +13,8 @@ const state = {
   sort: 'name',
   order: 'asc',
   page: 1,
-  limit: 100,
+  totalPages: 1,
+  limit: 60,
   view: localStorage.getItem('storage_view') || 'list',
   showThumbnails: localStorage.getItem('storage_thumbnails') !== 'false',
   roots: [],
@@ -120,6 +121,30 @@ function drainVideoQueue() {
   }
 }
 
+const imgThumbObserver = typeof IntersectionObserver !== 'undefined'
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        imgThumbObserver.unobserve(entry.target);
+        const img = entry.target;
+        const src = img.dataset.src;
+        if (src) {
+          delete img.dataset.src;
+          img.src = src;
+        }
+      }
+    }, { rootMargin: '180px' })
+  : null;
+
+function assignLazyThumbSrc(img, url) {
+  if (imgThumbObserver) {
+    img.dataset.src = url;
+    imgThumbObserver.observe(img);
+  } else {
+    img.src = url;
+  }
+}
+
 const thumbObserver = typeof IntersectionObserver !== 'undefined'
   ? new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -174,17 +199,28 @@ function createIconBadge(item) {
   if (state.showThumbnails && !item.isDir && item.category === 'image') {
     const img = document.createElement('img');
     img.className = 'list-thumb';
-    img.loading = 'lazy';
     img.decoding = 'async';
-    img.src = buildFileUrl('/api/stream', item.path);
     img.alt = '';
     img.onerror = () => { span.innerHTML = ICONS.image; };
     span.innerHTML = '';
     span.appendChild(img);
-  } else if (state.showThumbnails && !item.isDir && item.category === 'video' && thumbObserver) {
-    span.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
-    span.dataset.thumbMode = 'list';
-    thumbObserver.observe(span);
+    assignLazyThumbSrc(img, buildFileUrl('/api/thumb', item.path));
+  } else if (state.showThumbnails && !item.isDir && item.category === 'video') {
+    const img = document.createElement('img');
+    img.className = 'list-thumb';
+    img.decoding = 'async';
+    img.alt = '';
+    img.onerror = () => {
+      span.innerHTML = ICONS.video;
+      if (thumbObserver) {
+        span.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
+        span.dataset.thumbMode = 'list';
+        thumbObserver.observe(span);
+      }
+    };
+    span.innerHTML = '';
+    span.appendChild(img);
+    assignLazyThumbSrc(img, buildFileUrl('/api/thumb', item.path));
   }
 
   return span;
@@ -207,22 +243,38 @@ function createGridThumb(item) {
   if (state.showThumbnails && !item.isDir && item.category === 'image') {
     const img = document.createElement('img');
     img.className = 'thumb-img';
-    img.loading = 'lazy';
     img.decoding = 'async';
-    img.src = buildFileUrl('/api/stream', item.path);
     img.alt = item.name;
     img.onerror = fallback;
     box.appendChild(img);
+    assignLazyThumbSrc(img, buildFileUrl('/api/thumb', item.path));
   } else if (!item.isDir && item.category === 'video') {
-    fallback();
-    const badge = document.createElement('span');
-    badge.className = 'video-badge';
-    badge.innerHTML = ICONS.play;
-    box.appendChild(badge);
-    if (state.showThumbnails && thumbObserver) {
-      box.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
-      box.dataset.thumbMode = 'grid';
-      thumbObserver.observe(box);
+    const addBadge = () => {
+      const badge = document.createElement('span');
+      badge.className = 'video-badge';
+      badge.innerHTML = ICONS.play;
+      box.appendChild(badge);
+    };
+    if (state.showThumbnails) {
+      const img = document.createElement('img');
+      img.className = 'thumb-img';
+      img.decoding = 'async';
+      img.alt = item.name;
+      img.onerror = () => {
+        fallback();
+        addBadge();
+        if (thumbObserver) {
+          box.dataset.thumbUrl = buildFileUrl('/api/stream', item.path);
+          box.dataset.thumbMode = 'grid';
+          thumbObserver.observe(box);
+        }
+      };
+      box.appendChild(img);
+      addBadge();
+      assignLazyThumbSrc(img, buildFileUrl('/api/thumb', item.path));
+    } else {
+      fallback();
+      addBadge();
     }
   } else {
     fallback();
@@ -278,7 +330,31 @@ async function init() {
   }
 }
 
+let listAbortController = null;
+let listRequestSeq = 0;
+
+function cancelPendingThumbnails() {
+  videoThumbQueue.length = 0;
+  const container = el('file-container');
+  if (!container) return;
+  container.querySelectorAll('img').forEach((img) => {
+    if (imgThumbObserver) imgThumbObserver.unobserve(img);
+    delete img.dataset.src;
+    img.onerror = null;
+    img.removeAttribute('src');
+  });
+}
+
 async function loadDirectory() {
+  if (listAbortController) {
+    listAbortController.abort();
+  }
+  listAbortController = new AbortController();
+  const reqSeq = ++listRequestSeq;
+
+  // Free browser connection pool from pending image/video thumbnails on page change
+  cancelPendingThumbnails();
+
   const params = new URLSearchParams({
     root: state.root,
     path: state.path,
@@ -290,13 +366,24 @@ async function loadDirectory() {
     limit: String(state.limit),
   });
 
-  const data = await apiJson(`/api/list?${params.toString()}`);
+  let data;
+  try {
+    data = await apiJson(`/api/list?${params.toString()}`, {
+      signal: listAbortController.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    throw err;
+  }
+  if (reqSeq !== listRequestSeq) return;
+
   state.roots = data.roots || [];
   state.items = data.items || [];
   if (data.root) {
     state.root = data.root.id;
   }
   state.page = data.page;
+  state.totalPages = data.totalPages || 1;
 
   renderRoots();
   renderBreadcrumbs(data.breadcrumbs);
@@ -396,6 +483,8 @@ function renderFiles(items) {
     return;
   }
 
+  const frag = document.createDocumentFragment();
+
   if (state.view === 'list') {
     const header = document.createElement('div');
     header.className = 'file-header';
@@ -406,7 +495,7 @@ function renderFiles(items) {
       <span class="col-date">Modified</span>
       <span></span>
     `;
-    container.appendChild(header);
+    frag.appendChild(header);
   }
 
   for (const item of items) {
@@ -433,7 +522,7 @@ function renderFiles(items) {
       meta.innerHTML = `<span>${item.isDir ? 'Folder' : formatBytes(item.size)}</span><span>${formatDate(item.mtime)}</span>`;
 
       card.append(thumb, body, meta);
-      container.appendChild(card);
+      frag.appendChild(card);
     } else {
       const row = document.createElement('div');
       row.className = 'file-row';
@@ -457,9 +546,10 @@ function renderFiles(items) {
 
       const actions = createActionButtons(item);
       row.append(icon, name, size, date, actions);
-      container.appendChild(row);
+      frag.appendChild(row);
     }
   }
+  container.appendChild(frag);
 }
 
 function createActionButtons(item) {
@@ -802,7 +892,7 @@ el('thumb-btn').addEventListener('click', () => {
 el('view-btn').addEventListener('click', () => {
   state.view = state.view === 'list' ? 'grid' : 'list';
   localStorage.setItem('storage_view', state.view);
-  loadDirectory();
+  renderFiles(state.items);
 });
 
 el('prev-page').addEventListener('click', () => {
@@ -813,8 +903,10 @@ el('prev-page').addEventListener('click', () => {
 });
 
 el('next-page').addEventListener('click', () => {
-  state.page += 1;
-  loadDirectory();
+  if (state.page < state.totalPages) {
+    state.page += 1;
+    loadDirectory();
+  }
 });
 
 el('mkdir-btn').addEventListener('click', async () => {

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 )
 
@@ -258,6 +259,80 @@ type ListResponse struct {
 	TotalPages  int          `json:"totalPages"`
 }
 
+type dirCacheEntry struct {
+	dirMtimeMs int64
+	cachedAt   time.Time
+	entries    []FileEntry
+}
+
+var (
+	dirCacheMu sync.Mutex
+	dirCache   = make(map[string]*dirCacheEntry)
+)
+
+func getDirectoryEntries(absPath, relPath string, dirMtimeMs int64) ([]FileEntry, error) {
+	dirCacheMu.Lock()
+	if c, ok := dirCache[absPath]; ok && c.dirMtimeMs == dirMtimeMs && time.Since(c.cachedAt) < 15*time.Second {
+		entries := c.entries
+		dirCacheMu.Unlock()
+		return entries, nil
+	}
+	dirCacheMu.Unlock()
+
+	dirents, err := os.ReadDir(absPath)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]FileEntry, 0, len(dirents))
+	for _, d := range dirents {
+		fullPath := filepath.Join(absPath, d.Name())
+		st, err := os.Stat(fullPath)
+		if err != nil {
+			continue
+		}
+		isDir := st.IsDir()
+		itemRel := d.Name()
+		if relPath != "" {
+			itemRel = relPath + "/" + d.Name()
+		}
+		size := int64(0)
+		mime := "inode/directory"
+		if !isDir {
+			size = st.Size()
+			mime = GetMimeType(d.Name())
+		}
+		entries = append(entries, FileEntry{
+			Name:     d.Name(),
+			Path:     itemRel,
+			IsDir:    isDir,
+			Category: GetMediaCategory(d.Name(), isDir),
+			Size:     size,
+			Mtime:    float64(st.ModTime().UnixMilli()),
+			Mime:     mime,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].IsDir != entries[j].IsDir {
+			return entries[i].IsDir
+		}
+		return naturalLess(entries[i].Name, entries[j].Name)
+	})
+
+	dirCacheMu.Lock()
+	if len(dirCache) >= 32 {
+		for k := range dirCache {
+			delete(dirCache, k)
+			break
+		}
+	}
+	dirCache[absPath] = &dirCacheEntry{dirMtimeMs: dirMtimeMs, cachedAt: time.Now(), entries: entries}
+	dirCacheMu.Unlock()
+
+	return entries, nil
+}
+
 func ListDirectory(roots []Root, q url.Values) (*ListResponse, error) {
 	rootID := q.Get("root")
 	if rootID == "" {
@@ -299,89 +374,60 @@ func ListDirectory(roots []Root, q url.Values) (*ListResponse, error) {
 		return nil, &httpError{Status: http.StatusBadRequest, Msg: "Target is not a directory"}
 	}
 
-	dirents, err := os.ReadDir(resolved.AbsPath)
+	allEntries, err := getDirectoryEntries(resolved.AbsPath, resolved.RelPath, info.ModTime().UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	var preFiltered []os.DirEntry
-	for _, d := range dirents {
-		name := d.Name()
-		if search != "" && !strings.Contains(strings.ToLower(name), search) {
+	validEntries := make([]FileEntry, 0, len(allEntries))
+	for _, e := range allEntries {
+		if search != "" && !strings.Contains(strings.ToLower(e.Name), search) {
 			continue
 		}
 		if typeFilter != "all" {
-			cat := GetMediaCategory(name, d.IsDir())
-			if cat != typeFilter && !(typeFilter == "folder" && d.IsDir()) {
+			if e.Category != typeFilter && !(typeFilter == "folder" && e.IsDir) {
 				continue
 			}
 		}
-		preFiltered = append(preFiltered, d)
-	}
-
-	validEntries := make([]FileEntry, 0, len(preFiltered))
-	for _, d := range preFiltered {
-		fullPath := filepath.Join(resolved.AbsPath, d.Name())
-		st, err := os.Stat(fullPath)
-		if err != nil {
-			continue
-		}
-		isDir := st.IsDir()
-		itemRel := d.Name()
-		if resolved.RelPath != "" {
-			itemRel = resolved.RelPath + "/" + d.Name()
-		}
-		size := int64(0)
-		mime := "inode/directory"
-		if !isDir {
-			size = st.Size()
-			mime = GetMimeType(d.Name())
-		}
-		validEntries = append(validEntries, FileEntry{
-			Name:     d.Name(),
-			Path:     itemRel,
-			IsDir:    isDir,
-			Category: GetMediaCategory(d.Name(), isDir),
-			Size:     size,
-			Mtime:    float64(st.ModTime().UnixMilli()),
-			Mime:     mime,
-		})
+		validEntries = append(validEntries, e)
 	}
 
 	desc := order == "desc"
-	sort.Slice(validEntries, func(i, j int) bool {
-		a, b := validEntries[i], validEntries[j]
-		if a.IsDir != b.IsDir {
-			return a.IsDir
-		}
-		var less bool
-		switch sortBy {
-		case "size":
-			if a.Size == b.Size {
-				less = naturalLess(a.Name, b.Name)
-			} else {
-				less = a.Size < b.Size
+	if sortBy != "name" || desc {
+		sort.Slice(validEntries, func(i, j int) bool {
+			a, b := validEntries[i], validEntries[j]
+			if a.IsDir != b.IsDir {
+				return a.IsDir
 			}
-		case "mtime":
-			if a.Mtime == b.Mtime {
+			var less bool
+			switch sortBy {
+			case "size":
+				if a.Size == b.Size {
+					less = naturalLess(a.Name, b.Name)
+				} else {
+					less = a.Size < b.Size
+				}
+			case "mtime":
+				if a.Mtime == b.Mtime {
+					less = naturalLess(a.Name, b.Name)
+				} else {
+					less = a.Mtime < b.Mtime
+				}
+			case "type":
+				if a.Category == b.Category {
+					less = naturalLess(a.Name, b.Name)
+				} else {
+					less = a.Category < b.Category
+				}
+			default:
 				less = naturalLess(a.Name, b.Name)
-			} else {
-				less = a.Mtime < b.Mtime
 			}
-		case "type":
-			if a.Category == b.Category {
-				less = naturalLess(a.Name, b.Name)
-			} else {
-				less = a.Category < b.Category
+			if desc {
+				return !less
 			}
-		default:
-			less = naturalLess(a.Name, b.Name)
-		}
-		if desc {
-			return !less
-		}
-		return less
-	})
+			return less
+		})
+	}
 
 	total := len(validEntries)
 	totalPages := (total + limitNum - 1) / limitNum

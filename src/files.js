@@ -173,6 +173,52 @@ async function mapWithConcurrency(items, concurrency, fn) {
   return results;
 }
 
+const DIR_CACHE_TTL_MS = 15000;
+const DIR_CACHE_MAX = 32;
+const dirCache = new Map();
+
+async function getDirectoryEntries(absPath, relPath, dirMtimeMs) {
+  const cached = dirCache.get(absPath);
+  if (cached && cached.dirMtimeMs === dirMtimeMs && Date.now() - cached.cachedAt < DIR_CACHE_TTL_MS) {
+    return cached.entries;
+  }
+
+  const dirents = await fsp.readdir(absPath, { withFileTypes: true });
+  const entries = await mapWithConcurrency(dirents, 64, async (dirent) => {
+    const fullPath = path.join(absPath, dirent.name);
+    let stat = null;
+    let isDir = dirent.isDirectory();
+    try {
+      stat = await fsp.stat(fullPath);
+      isDir = stat.isDirectory();
+    } catch {
+      return null;
+    }
+    const itemRel = relPath ? `${relPath}/${dirent.name}` : dirent.name;
+    return {
+      name: dirent.name,
+      path: itemRel,
+      isDir,
+      category: getMediaCategory(dirent.name, isDir),
+      size: isDir ? 0 : stat.size,
+      mtime: stat.mtimeMs,
+      mime: isDir ? 'inode/directory' : getMimeType(dirent.name),
+    };
+  });
+
+  const valid = entries.filter(Boolean);
+  valid.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  if (dirCache.size >= DIR_CACHE_MAX) {
+    const oldestKey = dirCache.keys().next().value;
+    dirCache.delete(oldestKey);
+  }
+  dirCache.set(absPath, { dirMtimeMs, cachedAt: Date.now(), entries: valid });
+  return valid;
+}
+
 /**
  * List directory contents with search, category filter, sorting, and pagination.
  */
@@ -196,64 +242,39 @@ async function listDirectory(roots, query) {
     throw err;
   }
 
-  const dirents = await fsp.readdir(resolved.absPath, { withFileTypes: true });
+  const allEntries = await getDirectoryEntries(resolved.absPath, resolved.relPath, targetStat.mtimeMs);
   const searchLower = String(search).trim().toLowerCase();
 
-  // Filter by search & type before stat-ing when possible
-  const preFiltered = dirents.filter((d) => {
-    if (searchLower && !d.name.toLowerCase().includes(searchLower)) {
+  const validEntries = allEntries.filter((e) => {
+    if (searchLower && !e.name.toLowerCase().includes(searchLower)) {
       return false;
     }
     if (type !== 'all') {
-      const cat = getMediaCategory(d.name, d.isDirectory());
-      if (cat !== type && !(type === 'folder' && d.isDirectory())) {
+      if (e.category !== type && !(type === 'folder' && e.isDir)) {
         return false;
       }
     }
     return true;
   });
-
-  const entries = await mapWithConcurrency(preFiltered, 64, async (dirent) => {
-    const fullPath = path.join(resolved.absPath, dirent.name);
-    let stat = null;
-    let isDir = dirent.isDirectory();
-    try {
-      stat = await fsp.stat(fullPath);
-      isDir = stat.isDirectory();
-    } catch {
-      // Skip broken symlinks or unreadable entries
-      return null;
-    }
-    const itemRel = resolved.relPath ? `${resolved.relPath}/${dirent.name}` : dirent.name;
-    return {
-      name: dirent.name,
-      path: itemRel,
-      isDir,
-      category: getMediaCategory(dirent.name, isDir),
-      size: isDir ? 0 : stat.size,
-      mtime: stat.mtimeMs,
-      mime: isDir ? 'inode/directory' : getMimeType(dirent.name),
-    };
-  });
-
-  const validEntries = entries.filter(Boolean);
   const dirFactor = order === 'desc' ? -1 : 1;
 
-  validEntries.sort((a, b) => {
-    // Always keep folders grouped before files
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    let cmp = 0;
-    if (sort === 'size') {
-      cmp = a.size - b.size;
-    } else if (sort === 'mtime') {
-      cmp = a.mtime - b.mtime;
-    } else if (sort === 'type') {
-      cmp = a.category.localeCompare(b.category) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    } else {
-      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    }
-    return cmp * dirFactor;
-  });
+  if (sort !== 'name' || order !== 'asc') {
+    validEntries.sort((a, b) => {
+      // Always keep folders grouped before files
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      let cmp = 0;
+      if (sort === 'size') {
+        cmp = a.size - b.size;
+      } else if (sort === 'mtime') {
+        cmp = a.mtime - b.mtime;
+      } else if (sort === 'type') {
+        cmp = a.category.localeCompare(b.category) || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      } else {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return cmp * dirFactor;
+    });
+  }
 
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(500, Math.max(1, parseInt(limit, 10) || 100));

@@ -3,9 +3,11 @@
 const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
+const zlib = require('zlib');
 const { URL } = require('url');
 const { createAuthManager } = require('./auth');
 const { executePowerAction } = require('./power');
+const { serveThumbnail } = require('./thumb');
 const {
   listDirectory,
   streamFile,
@@ -24,14 +26,31 @@ const {
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
-function sendJson(res, statusCode, data, extraHeaders = {}) {
-  const body = JSON.stringify(data);
+function sendCompressed(req, res, statusCode, contentType, rawBuf, extraHeaders = {}) {
+  const acceptEnc = String(req?.headers?.['accept-encoding'] || '');
+  if (rawBuf.length >= 512 && acceptEnc.includes('gzip')) {
+    const gz = zlib.gzipSync(rawBuf, { level: 6 });
+    res.writeHead(statusCode, {
+      'Content-Type': contentType,
+      'Content-Encoding': 'gzip',
+      'Vary': 'Accept-Encoding',
+      'Content-Length': gz.length,
+      ...extraHeaders,
+    });
+    res.end(gz);
+    return;
+  }
   res.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
+    'Content-Type': contentType,
+    'Content-Length': rawBuf.length,
     ...extraHeaders,
   });
-  res.end(body);
+  res.end(rawBuf);
+}
+
+function sendJson(res, statusCode, data, extraHeaders = {}, req = null) {
+  const body = Buffer.from(JSON.stringify(data), 'utf8');
+  sendCompressed(req, res, statusCode, 'application/json; charset=utf-8', body, extraHeaders);
 }
 
 function readJsonBody(req, maxBytes = 1024 * 1024) {
@@ -63,7 +82,7 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
   });
 }
 
-async function serveStatic(res, reqPath) {
+async function serveStatic(res, reqPath, req) {
   const clean = reqPath === '/' ? 'index.html' : reqPath.replace(/^\/+/, '');
   const safePath = path.resolve(PUBLIC_DIR, clean);
   if (!safePath.startsWith(PUBLIC_DIR + path.sep) && safePath !== PUBLIC_DIR) {
@@ -78,12 +97,9 @@ async function serveStatic(res, reqPath) {
       return;
     }
     const content = await fsp.readFile(safePath);
-    res.writeHead(200, {
-      'Content-Type': getMimeType(safePath),
-      'Content-Length': content.length,
+    sendCompressed(req, res, 200, getMimeType(safePath), content, {
       'Cache-Control': 'no-cache',
     });
-    res.end(content);
   } catch {
     sendJson(res, 404, { error: 'Not found' });
   }
@@ -113,7 +129,7 @@ function createRequestHandler(config, { tunnelManager, powerRunner } = {}) {
         req.method === 'GET' &&
         (pathname === '/' || pathname === '/app.js' || pathname === '/styles.css')
       ) {
-        await serveStatic(res, pathname);
+        await serveStatic(res, pathname, req);
         return;
       }
 
@@ -264,12 +280,17 @@ function createRequestHandler(config, { tunnelManager, powerRunner } = {}) {
             return;
           }
           const data = await listDirectory(config.roots, query);
-          sendJson(res, 200, data);
+          sendJson(res, 200, data, {}, req);
           return;
         }
 
         if (pathname === '/api/stream' && (req.method === 'GET' || req.method === 'HEAD')) {
           await streamFile(req, res, config.roots, query, { download: false });
+          return;
+        }
+
+        if (pathname === '/api/thumb' && req.method === 'GET') {
+          await serveThumbnail(req, res, config.roots, query);
           return;
         }
 

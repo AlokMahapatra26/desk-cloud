@@ -1,6 +1,8 @@
 package deskcloud
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,12 +20,37 @@ type ServerOptions struct {
 	PowerRunner   PowerRunner
 }
 
+func sendCompressedBytes(w http.ResponseWriter, r *http.Request, status int, contentType string, raw []byte, cacheControl string) {
+	if cacheControl != "" {
+		w.Header().Set("Cache-Control", cacheControl)
+	}
+	if len(raw) >= 512 && r != nil && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		if _, err := gz.Write(raw); err == nil && gz.Close() == nil {
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("Vary", "Accept-Encoding")
+			w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+			w.WriteHeader(status)
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
+	w.WriteHeader(status)
+	_, _ = w.Write(raw)
+}
+
 func sendJSON(w http.ResponseWriter, status int, data any) {
 	body, _ := json.Marshal(data)
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	sendCompressedBytes(w, nil, status, "application/json; charset=utf-8", body, "")
+}
+
+func sendJSONGzip(w http.ResponseWriter, r *http.Request, status int, data any) {
+	body, _ := json.Marshal(data)
+	sendCompressedBytes(w, r, status, "application/json; charset=utf-8", body, "")
 }
 
 func readJSONBody(r *http.Request, dst any) error {
@@ -97,11 +124,7 @@ func NewHandler(cfg *Config, opts ServerOptions) http.Handler {
 				sendJSON(w, http.StatusNotFound, map[string]string{"error": "Not found"})
 				return
 			}
-			w.Header().Set("Content-Type", GetMimeType(clean))
-			w.Header().Set("Content-Length", strconv.Itoa(len(content)))
-			w.Header().Set("Cache-Control", "no-cache")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(content)
+			sendCompressedBytes(w, r, http.StatusOK, GetMimeType(clean), content, "no-cache")
 			return
 		}
 
@@ -177,7 +200,7 @@ func NewHandler(cfg *Config, opts ServerOptions) http.Handler {
 				handleAPIError(w, err)
 				return
 			}
-			sendJSON(w, http.StatusOK, res)
+			sendJSONGzip(w, r, http.StatusOK, res)
 
 		case pathname == "/api/roots/add" && r.Method == http.MethodPost:
 			if err := requireWritable(); err != nil {
@@ -291,7 +314,7 @@ func NewHandler(cfg *Config, opts ServerOptions) http.Handler {
 				handleAPIError(w, err)
 				return
 			}
-			sendJSON(w, http.StatusOK, res)
+			sendJSONGzip(w, r, http.StatusOK, res)
 
 		case pathname == "/api/list" && r.Method == http.MethodGet:
 			rootsMu.RLock()
@@ -316,13 +339,21 @@ func NewHandler(cfg *Config, opts ServerOptions) http.Handler {
 				handleAPIError(w, err)
 				return
 			}
-			sendJSON(w, http.StatusOK, res)
+			sendJSONGzip(w, r, http.StatusOK, res)
 
 		case pathname == "/api/stream" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 			rootsMu.RLock()
 			rootsCopy := append([]Root(nil), cfg.Roots...)
 			rootsMu.RUnlock()
 			if err := StreamFile(w, r, rootsCopy, q, false); err != nil {
+				handleAPIError(w, err)
+			}
+
+		case pathname == "/api/thumb" && r.Method == http.MethodGet:
+			rootsMu.RLock()
+			rootsCopy := append([]Root(nil), cfg.Roots...)
+			rootsMu.RUnlock()
+			if err := ServeThumbnail(w, r, rootsCopy, q); err != nil {
 				handleAPIError(w, err)
 			}
 
