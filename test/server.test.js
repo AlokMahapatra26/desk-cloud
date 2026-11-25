@@ -405,6 +405,15 @@ test('remote power control: opt-in flag, password check, readonly block, and OS 
     });
     assert.equal(okRes.status, 200);
     assert.deepEqual(triggered, ['shutdown']);
+
+    const sysRes = await fetch(`${onEnv.baseUrl}/api/system/stats`, {
+      headers: { Cookie: cookie },
+    });
+    assert.equal(sysRes.status, 200);
+    const sysData = await sysRes.json();
+    assert.ok(sysData.hostname);
+    assert.ok(sysData.memory && sysData.memory.totalBytes > 0);
+    assert.ok(Array.isArray(sysData.processes));
   } finally {
     await onEnv.close();
   }

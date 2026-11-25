@@ -68,6 +68,9 @@
           <span>Upload</span>
         </button>
         <input id="file-input" type="file" multiple class="hidden" />
+        <button id="system-btn" class="btn btn-secondary icon-only" title="System Status & Processes">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </button>
         <button id="power-btn" class="btn btn-secondary icon-only hidden" title="Power Controls">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
         </button>
@@ -227,6 +230,68 @@
             <button id="sys-share-current-btn" class="btn btn-primary small-btn hidden" type="button">Share This Folder</button>
           </div>
           <div id="sys-dir-list" class="sys-dir-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Status Modal -->
+  <div id="system-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content sys-modal-content">
+      <div class="modal-header">
+        <div>
+          <h2>System Status</h2>
+          <p id="sys-host-meta" class="muted small" style="margin:2px 0 0;"></p>
+        </div>
+        <div class="modal-actions">
+          <span class="muted small" id="sys-refresh-badge">Live · 2s</span>
+          <button id="sys-refresh-btn" class="btn btn-secondary small-btn">Refresh</button>
+          <button id="system-close" class="btn btn-ghost icon-only small-btn" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="sys-modal-body">
+        <div class="sys-metrics-grid">
+          <div class="sys-card">
+            <div class="sys-card-head">
+              <span class="muted small">CPU</span>
+              <strong id="sys-cpu-pct">—</strong>
+            </div>
+            <div class="progress-bar"><div id="sys-cpu-bar" class="progress-fill"></div></div>
+            <p id="sys-cpu-sub" class="muted small" style="margin:8px 0 0;"></p>
+          </div>
+          <div class="sys-card">
+            <div class="sys-card-head">
+              <span class="muted small">RAM</span>
+              <strong id="sys-ram-pct">—</strong>
+            </div>
+            <div class="progress-bar"><div id="sys-ram-bar" class="progress-fill"></div></div>
+            <p id="sys-ram-sub" class="muted small" style="margin:8px 0 0;"></p>
+          </div>
+        </div>
+
+        <div class="roots-section">
+          <h3>Storage / Disks</h3>
+          <div id="sys-disks-list" class="sys-disks-list"></div>
+        </div>
+
+        <div class="roots-section">
+          <h3>Top Processes</h3>
+          <div class="sys-proc-wrap">
+            <table class="sys-proc-table">
+              <thead>
+                <tr>
+                  <th>PID</th>
+                  <th>Process</th>
+                  <th class="num">CPU</th>
+                  <th class="num">RAM</th>
+                </tr>
+              </thead>
+              <tbody id="sys-proc-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

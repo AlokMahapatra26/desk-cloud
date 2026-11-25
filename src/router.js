@@ -8,6 +8,7 @@ const { URL } = require('url');
 const { createAuthManager } = require('./auth');
 const { executePowerAction } = require('./power');
 const { serveThumbnail } = require('./thumb');
+const { getSystemStats } = require('./sysinfo');
 const {
   listDirectory,
   streamFile,
@@ -198,6 +199,12 @@ function createRequestHandler(config, { tunnelManager, powerRunner } = {}) {
           requireWritable();
           const data = await browseSystemDirs(query.path || '');
           sendJson(res, 200, data);
+          return;
+        }
+
+        if (pathname === '/api/system/stats' && req.method === 'GET') {
+          const stats = await getSystemStats();
+          sendJson(res, 200, stats, {}, req);
           return;
         }
 

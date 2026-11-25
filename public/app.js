@@ -1163,6 +1163,7 @@ document.addEventListener('keydown', (e) => {
     closePreview();
     closeRootsModal();
     closePowerModal();
+    closeSystemModal();
   } else if (!el('preview-modal').classList.contains('hidden')) {
     const tag = document.activeElement?.tagName;
     if (tag === 'VIDEO' || tag === 'AUDIO' || tag === 'INPUT') return;
@@ -1191,6 +1192,97 @@ window.addEventListener('drop', (e) => {
   const files = Array.from(e.dataTransfer?.files || []);
   uploadFiles(files);
 });
+
+// --- System Status & Process Monitor ---
+
+let sysTimer = null;
+
+function formatUptime(sec) {
+  if (!sec && sec !== 0) return '';
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  parts.push(`${m}m`);
+  return parts.join(' ');
+}
+
+function barColor(pct) {
+  if (pct >= 85) return '#ef4444';
+  if (pct >= 65) return '#f59e0b';
+  return '#10b981';
+}
+
+async function refreshSystemStats() {
+  try {
+    const s = await apiJson('/api/system/stats');
+    el('sys-host-meta').textContent = `${s.hostname} · ${s.platform}/${s.arch} · Up ${formatUptime(s.uptimeSec)}`;
+
+    const cpuPct = s.cpu?.usagePct ?? 0;
+    el('sys-cpu-pct').textContent = `${cpuPct}%`;
+    el('sys-cpu-bar').style.width = `${Math.min(100, cpuPct)}%`;
+    el('sys-cpu-bar').style.background = barColor(cpuPct);
+    const loads = (s.cpu?.loadAvg || []).join(', ');
+    el('sys-cpu-sub').textContent = `${s.cpu?.cores || 0} cores${loads ? ` · Load ${loads}` : ''}`;
+
+    const memPct = s.memory?.usedPct ?? 0;
+    el('sys-ram-pct').textContent = `${memPct}%`;
+    el('sys-ram-bar').style.width = `${Math.min(100, memPct)}%`;
+    el('sys-ram-bar').style.background = barColor(memPct);
+    el('sys-ram-sub').textContent = `${formatBytes(s.memory?.usedBytes || 0)} / ${formatBytes(s.memory?.totalBytes || 0)}`;
+
+    const disksList = el('sys-disks-list');
+    disksList.innerHTML = '';
+    for (const d of s.disks || []) {
+      const row = document.createElement('div');
+      row.className = 'sys-disk-row';
+      row.innerHTML = `
+        <div class="sys-disk-top">
+          <strong class="truncate">${d.mount}</strong>
+          <span class="muted">${formatBytes(d.usedBytes)} / ${formatBytes(d.totalBytes)} (${d.usedPct}%)</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, d.usedPct)}%;background:${barColor(d.usedPct)}"></div></div>
+      `;
+      disksList.appendChild(row);
+    }
+
+    const tbody = el('sys-proc-body');
+    tbody.innerHTML = '';
+    for (const p of s.processes || []) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="muted">${p.pid}</td>
+        <td class="truncate" style="max-width:260px;"></td>
+        <td class="num">${p.cpuPct.toFixed(1)}%</td>
+        <td class="num">${formatBytes(p.memBytes)}</td>
+      `;
+      tr.children[1].textContent = p.name;
+      tbody.appendChild(tr);
+    }
+  } catch {
+    // Ignore transient poll errors
+  }
+}
+
+function openSystemModal() {
+  el('system-modal').classList.remove('hidden');
+  refreshSystemStats();
+  clearInterval(sysTimer);
+  sysTimer = setInterval(refreshSystemStats, 2000);
+}
+
+function closeSystemModal() {
+  el('system-modal').classList.add('hidden');
+  clearInterval(sysTimer);
+  sysTimer = null;
+}
+
+el('system-btn').addEventListener('click', openSystemModal);
+el('system-close').addEventListener('click', closeSystemModal);
+el('sys-refresh-btn').addEventListener('click', refreshSystemStats);
+document.querySelector('#system-modal .modal-backdrop').addEventListener('click', closeSystemModal);
 
 // --- Remote Power Control ---
 

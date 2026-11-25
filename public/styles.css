@@ -978,6 +978,101 @@ input:focus,
   gap: 8px;
 }
 
+/* System Status Modal */
+.sys-modal-content {
+  width: min(760px, 100%);
+}
+
+.sys-modal-body {
+  padding: 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.sys-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.sys-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.sys-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.sys-disks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sys-disk-row {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.sys-disk-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.sys-proc-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sys-proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.sys-proc-table th,
+.sys-proc-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.sys-proc-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sys-proc-table td.num,
+.sys-proc-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sys-proc-table tr:last-child td {
+  border-bottom: none;
+}
+
 @media (max-width: 720px) {
   .file-header,
   .file-row {

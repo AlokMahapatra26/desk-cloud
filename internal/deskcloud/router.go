@@ -202,6 +202,9 @@ func NewHandler(cfg *Config, opts ServerOptions) http.Handler {
 			}
 			sendJSONGzip(w, r, http.StatusOK, res)
 
+		case pathname == "/api/system/stats" && r.Method == http.MethodGet:
+			sendJSONGzip(w, r, http.StatusOK, GetSystemStats())
+
 		case pathname == "/api/roots/add" && r.Method == http.MethodPost:
 			if err := requireWritable(); err != nil {
 				handleAPIError(w, err)

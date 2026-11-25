@@ -241,4 +241,17 @@ func TestPowerControl(t *testing.T) {
 	if okRes.StatusCode != 200 || len(called) != 1 || called[0] != "shutdown" {
 		t.Fatalf("expected 200 and shutdown recorded, got %d (%v)", okRes.StatusCode, called)
 	}
+
+	sysRes := doReq(t, http.MethodGet, onEnv.server.URL+"/api/system/stats", onCookie, nil, "")
+	defer sysRes.Body.Close()
+	if sysRes.StatusCode != 200 {
+		t.Fatalf("expected 200 from /api/system/stats, got %d", sysRes.StatusCode)
+	}
+	var stats SystemStats
+	if err := json.NewDecoder(sysRes.Body).Decode(&stats); err != nil {
+		t.Fatal(err)
+	}
+	if stats.Hostname == "" || stats.CPU.Cores < 1 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
 }
